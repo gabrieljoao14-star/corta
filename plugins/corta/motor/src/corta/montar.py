@@ -16,8 +16,8 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from .base import (Cronometro, CortaErro, ffmpeg, fps_saida, ler_json, log, pasta_job, registrar_saida, rodar,
-                   saida_livre, salvar_json)
+from .base import (Cronometro, CortaErro, ffmpeg, fps_saida, ler_json, log, nome_seguro, pasta_job, registrar_saida,
+                   rodar, saida_livre, salvar_json)
 from .perfil import args_video, carregar as carregar_perfil
 
 LIMIAR_VOZ_DB = -42     # acima disso é voz (a −45 entra respiração)
@@ -74,13 +74,14 @@ def _regioes(x, sr, a, b):
     return [r for r in juntos if r[1] - r[0] >= REGIAO_MIN]
 
 
-def _intervalos(trechos, plano, x, sr, apertar: bool):
+def _intervalos(trechos, plano, x, sr, apertar: bool, palavras: list[dict] | None = None):
     itens = sorted(plano, key=lambda it: it if isinstance(it, int) else it[0])
-    brutos = []
+    brutos, faixas = [], []
     for it in itens:
         i, so, eo = (it, None, None) if isinstance(it, int) else (it[0], it[1], it[2])
         if not 0 <= i < len(trechos):
             raise CortaErro(f"takes.json fala do trecho {i}, mas só existem {len(trechos)} (T000–T{len(trechos) - 1:03d}).")
+        faixas.append((so if so is not None else trechos[i][0], eo if eo is not None else trechos[i][1]))
         if apertar:
             a = so if so is not None else trechos[i][0] - 0.3
             b = eo if eo is not None else trechos[i][1] + 0.3
@@ -96,9 +97,19 @@ def _intervalos(trechos, plano, x, sr, apertar: bool):
                 continue
         s, e = _refinar(x, sr, *trechos[i])
         brutos.append([so if so is not None else s, eo if eo is not None else e])
+    # o aperto por volume não pode engolir palavra: em áudio baixo (gravação de reunião) ele cortava
+    # "não", "via", "A". Palavra transcrita dentro de um take mantido volta inteira.
+    if apertar and palavras:
+        for w in palavras:
+            meio = (w["start"] + w["end"]) / 2
+            for fa, fb in faixas:
+                if fa <= meio <= fb:
+                    if not any(a <= meio <= b for a, b in brutos):
+                        brutos.append([max(fa, w["start"] - 0.04), min(fb, w["end"] + 0.06)])
+                    break
     juntos = []
     for s, e in sorted(brutos):
-        if juntos and s <= juntos[-1][1]:
+        if juntos and s <= juntos[-1][1] + CORTE_MIN:
             juntos[-1][1] = max(juntos[-1][1], e)
         else:
             juntos.append([max(0.0, s), e])
@@ -113,7 +124,24 @@ def _arvore(termos):
     return f"({_arvore(termos[:m])}+{_arvore(termos[m:])})"
 
 
-def montar(video: Path, takes: Path | None = None, apertar: bool | None = None, saida: Path | None = None) -> Path:
+def _plano_na_janela(trechos, plano, ini: float, fim: float):
+    """Só o que cai dentro de [ini, fim] (cortes de vídeo longo), com as bordas presas à janela."""
+    out = []
+    for it in plano:
+        i, so, eo = (it, None, None) if isinstance(it, int) else (it[0], it[1], it[2])
+        s = so if so is not None else trechos[i][0]
+        e = eo if eo is not None else trechos[i][1]
+        if e <= ini or s >= fim:
+            continue
+        out.append([i, max(s, ini) if s < ini else so, min(e, fim) if e > fim else eo])
+    return out
+
+
+def montar(video: Path, takes: Path | None = None, apertar: bool | None = None, saida: Path | None = None,
+           formato: str | None = None, enquadrar: str = "rosto", zoom: str = "nao",
+           janela: tuple[float, float] | None = None) -> Path:
+    from .enquadrar import filtro as filtro_quadro, planos
+    from .rosto import amostras, posicao
     video = video.resolve()
     job = pasta_job(video)
     if not (job / "trechos.json").exists():
@@ -121,15 +149,22 @@ def montar(video: Path, takes: Path | None = None, apertar: bool | None = None, 
     dados = ler_json(job / "trechos.json")
     trechos, info = dados["trechos"], dados["info"]
     plano = ler_json(takes)["manter"] if takes else list(range(len(trechos)))
+    if janela:
+        plano = _plano_na_janela(trechos, plano, *janela)
+        if not plano:
+            raise CortaErro(f"Não tem fala entre {janela[0]:.1f} s e {janela[1]:.1f} s.")
     if apertar is None:
-        apertar = dados["ritmo"] == "rapido"
+        apertar = dados["ritmo"] == "rapido" or janela is not None
     perfil = carregar_perfil()
     F = fps_saida(info["fps"])
     voz, sr = sf.read(job / "voz.wav", dtype="float32", always_2d=True)
     mono = voz.mean(1)
     spf = sr // F
 
-    intervalos = _intervalos(trechos, plano, mono, sr, apertar)
+    palavras = ler_json(job / "palavras.json") if (job / "palavras.json").exists() else None
+    intervalos = _intervalos(trechos, plano, mono, sr, apertar, palavras)
+    if janela:
+        intervalos = [[max(s, janela[0] - 0.15), min(e, janela[1] + 0.2)] for s, e in intervalos]
     quadros = [(int(round(s * F)), int(round(e * F))) for s, e in intervalos]
     quadros = [(a, b) for a, b in quadros if b > a]
     if not quadros:
@@ -149,24 +184,10 @@ def montar(video: Path, takes: Path | None = None, apertar: bool | None = None, 
         dur = (b - a) / F
         mapa.append({"original": [a / F, b / F], "saida": [round(t_out, 4), round(t_out + dur, 4)]})
         t_out += dur
-    wav = job / "audio_montado.wav"
-    sf.write(wav, np.vstack(pedacos), sr, subtype="PCM_16")
-
-    expr = _arvore([f"between(n,{a},{b - 1})" for a, b in quadros])
-    filtro = job / "filtro_select.txt"
-    filtro.write_text(f"[0:v:0]fps={F},select='{expr}',setpts=N/{F}/TB[v]", encoding="utf-8")
-    saida = saida_livre(Path(saida) if saida else video.with_name(f"{video.stem} (editado).mp4"))
-    log(f"== montando {len(quadros)} pedaços · {t_out:.1f} s · {F} fps · {perfil['encoder']}")
-    c = Cronometro("montagem")
-    rodar([ffmpeg(), "-y", "-v", "error", "-i", video, "-i", wav, "-/filter_complex", filtro,
-           "-map", "[v]", "-map", "1:a:0", *args_video(perfil), "-r", F,
-           "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", saida], descricao="montagem do vídeo")
-    c.fim()
-    wav.unlink(missing_ok=True)
 
     palavras_saida = []
-    if (job / "palavras.json").exists():
-        for w in ler_json(job / "palavras.json"):
+    if palavras:
+        for w in palavras:
             meio = (w["start"] + w["end"]) / 2
             for m in mapa:
                 s0, e0 = m["original"]
@@ -175,9 +196,64 @@ def montar(video: Path, takes: Path | None = None, apertar: bool | None = None, 
                     palavras_saida.append({"word": w["word"], "start": round(max(s0, w["start"]) + off, 3),
                                            "end": round(min(e0, w["end"]) + off, 3)})
                     break
-    salvar_json(job / "mapa.json", {"fps": F, "apertar": apertar, "takes": str(takes) if takes else None, "mapa": mapa})
+
+    # enquadramento e zoom: planos na linha do tempo da saída, rosto medido no original
+    cadeia, ow, oh, geo = "", info["largura"], info["altura"], None
+    precisa_quadro = (formato not in (None, "", "original")) or zoom != "nao"
+    if precisa_quadro:
+        lista_planos = planos(palavras_saida, [m["saida"] for m in mapa], t_out)
+        rostos = []
+        if enquadrar == "rosto":
+            grupos = []
+            for m in mapa:
+                a, b = m["original"]
+                if grupos and a - grupos[-1][1] < 8:
+                    grupos[-1][1] = b
+                else:
+                    grupos.append([a, b])
+            amos = []
+            for a, b in grupos:
+                amos += amostras(video, max(0.0, a - 0.25), b + 0.25)
+            def para_original(t):
+                for m in mapa:
+                    if m["saida"][0] <= t < m["saida"][1]:
+                        return m["original"][0] + (t - m["saida"][0])
+                return mapa[-1]["original"][1]
+            achou = 0
+            for a, b in lista_planos:
+                cx, cy, ok = posicao(amos, para_original(a + 0.05), para_original(max(a + 0.05, b - 0.05)))
+                achou += ok
+                rostos.append((cx, cy))
+            log(f"   rosto encontrado em {achou} de {len(lista_planos)} planos")
+        else:
+            rostos = [(0.5, 0.5)] * len(lista_planos)
+        cadeia, ow, oh, geo = filtro_quadro(info["largura"], info["altura"], formato, enquadrar, zoom, lista_planos, rostos)
+
+    wav = job / "audio_montado.wav"
+    sf.write(wav, np.vstack(pedacos), sr, subtype="PCM_16")
+    expr = _arvore([f"between(n,{a},{b - 1})" for a, b in quadros])
+    filtro = job / "filtro_select.txt"
+    filtro.write_text(f"[0:v:0]fps={F},select='{expr}',setpts=N/{F}/TB{cadeia}[v]", encoding="utf-8")
+    saida = saida_livre(Path(saida) if saida else video.with_name(f"{video.stem} (editado).mp4"))
+    saida.parent.mkdir(parents=True, exist_ok=True)
+    extra = f" · {ow}x{oh}" + (f" · zoom {zoom}" if zoom != "nao" else "") + (f" · {enquadrar}" if precisa_quadro else "")
+    log(f"== montando {len(quadros)} pedaços · {t_out:.1f} s · {F} fps{extra} · {perfil['encoder']}")
+    c = Cronometro("montagem")
+    rodar([ffmpeg(), "-y", "-v", "error", "-hwaccel", "auto", "-i", video, "-i", wav, "-/filter_complex", filtro,
+           "-map", "[v]", "-map", "1:a:0", *args_video(perfil), "-r", F,
+           "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", saida], descricao="montagem do vídeo")
+    c.fim()
+    wav.unlink(missing_ok=True)
+
+    nome = nome_seguro(saida.stem)
+    arq_mapa, arq_pal = job / f"mapa_{nome}.json", job / f"palavras_{nome}.json"
+    salvar_json(arq_mapa, {"fps": F, "apertar": apertar, "takes": str(takes) if takes else None, "janela": janela,
+                           "formato": formato, "enquadrar": enquadrar if precisa_quadro else None, "zoom": zoom, "quadro": geo,
+                           "mapa": mapa})
+    salvar_json(arq_pal, palavras_saida)
+    # compatibilidade: a última montagem também fica nos nomes fixos
+    salvar_json(job / "mapa.json", ler_json(arq_mapa))
     salvar_json(job / "palavras_saida.json", palavras_saida)
-    registrar_saida(job, {"arquivo": str(saida.resolve()), "etapa": "montar", "palavras": str(job / "palavras_saida.json"),
-                          "mapa": str(job / "mapa.json")})
+    registrar_saida(job, {"arquivo": str(saida.resolve()), "etapa": "montar", "palavras": str(arq_pal), "mapa": str(arq_mapa)})
     log(f"   → {saida}")
     return saida

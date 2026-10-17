@@ -10,5 +10,5 @@ resultado. Funciona no Mac e no Windows.
 |---|---|
 | `plugins/corta/motor` | Motor de edição em Python (comandos `corta preparar`, `montar`, `legendar`, `verificar`…). Ver o README de lá. |
 | `plugins/corta/catalogo/legendas` | Estilos de legenda (um arquivo por estilo). |
-| `plugins/corta/assets` | Fontes de licença aberta e o vídeo de amostra usado no teste da instalação. |
+| `plugins/corta/assets` | Fontes de licença aberta, detector de rosto (YuNet, MIT) e o vídeo de amostra do teste da instalação. |
 | `.github/workflows` | Teste automático no Mac e no Windows a cada mudança. |

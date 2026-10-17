@@ -1,6 +1,6 @@
 [project]
 name = "corta"
-version = "0.1.0"
+version = "0.2.0"
 description = "Motor de edição de vídeo do /corta: silêncio, takes, legenda e verificação. Roda no Mac e no Windows."
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
@@ -11,6 +11,7 @@ dependencies = [
     "soundfile>=0.12",
     "pillow>=10.3",
     "psutil>=5.9",
+    "opencv-python-headless>=4.9,<5",
 ]
 
 [project.optional-dependencies]

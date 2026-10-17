@@ -33,16 +33,15 @@ class Desenhista:
         n = estilo["palavras"]
         fator = {1: 1.6, 2: 1.25, 3: 1.0, 4: 0.9}.get(n, 0.8)
         self.px = max(18, int(round(min(largura, altura) * 0.074 * estilo["tamanho"] * fator)))
-        self.k = self.px / REF
-        self.fonte = _fonte(estilo["fonte"], self.px)
-        self.contorno = int(round(estilo["contorno"] * self.k))
+        self.px_base = self.px
+        self._tamanho(self.px)
         extra = 0.0
         if estilo["tipo_destaque"] == "caixa":
             extra = 0.34                                  # a caixa não encosta na vizinha
         elif estilo["tipo_destaque"] == "escala":
             extra = (estilo["escala_destaque"] - 1) * 1.2  # palavra maior não encosta ("masnão")
-        self.espaco = int(self.px * (0.28 + extra))
-        self.alt_linha = int(self.px * 1.22)
+        self.extra_espaco = extra
+        self._tamanho(self.px)
         self.faixa_h = int(self.px * 4.6)
         pos = estilo["posicao"]
         vertical = altura > largura
@@ -55,6 +54,15 @@ class Desenhista:
             yc = 0.70 if vertical else (0.86 if largura / altura > 1.5 else 0.80)
         self.y_centro = int(altura * yc)
         self.y_faixa = max(0, min(altura - self.faixa_h, self.y_centro - self.faixa_h // 2))
+
+    def _tamanho(self, px: int) -> None:
+        """Tamanho da letra em uso (diminui num bloco com palavra mais larga que a tela)."""
+        self.px = px
+        self.k = px / REF
+        self.fonte = _fonte(self.e["fonte"], px)
+        self.contorno = int(round(self.e["contorno"] * self.k))
+        self.espaco = int(px * (0.28 + getattr(self, "extra_espaco", 0.0)))
+        self.alt_linha = int(px * 1.22)
 
     # ---------- texto ----------
     def texto(self, w: str) -> str:
@@ -145,6 +153,19 @@ class Desenhista:
 
     # ---------- bloco ----------
     def bloco(self, palavras: list[str], ativa: int | None) -> Image.Image:
+        """Bloco desenhado; palavra que não cabe na largura diminui a letra só deste bloco."""
+        maxw = self.W * MARGEM_LARGURA
+        larga = max(self.largura_palavra(w) for w in palavras)
+        esc = self.e["escala_destaque"] if self.e["tipo_destaque"] == "escala" else 1.0
+        if larga * esc > maxw:
+            self._tamanho(max(12, int(self.px * maxw / (larga * esc))))
+        try:
+            return self._bloco(palavras, ativa)
+        finally:
+            if self.px != self.px_base:
+                self._tamanho(self.px_base)
+
+    def _bloco(self, palavras: list[str], ativa: int | None) -> Image.Image:
         e = self.e
         faixa = Image.new("RGBA", (self.W, self.faixa_h), (0, 0, 0, 0))
         linhas = self.quebrar_linhas(palavras)

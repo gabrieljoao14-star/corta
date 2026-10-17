@@ -10,12 +10,14 @@ próprios dados que a geraram). Mede no ARQUIVO FINAL:
 """
 from __future__ import annotations
 
+import io
 import re
 import subprocess
 from pathlib import Path
 
 import numpy as np
 import soundfile as sf
+from PIL import Image
 
 from .base import (CortaErro, ffmpeg, ffprobe, info_video, ler_json, log, rodar, saida_registrada, salvar_json)
 
@@ -35,6 +37,70 @@ def _cinza(arq: Path, t: float, retrato: bool) -> np.ndarray:
     out = subprocess.run([ffmpeg(), "-v", "error", "-ss", f"{max(0, t):.3f}", "-i", str(arq), "-frames:v", "1",
                           "-vf", f"scale={tam},format=gray", "-f", "rawvideo", "-"], capture_output=True).stdout
     return np.frombuffer(out, np.uint8).astype(np.int16)
+
+
+# Pillow (não OpenCV) aqui: a conferência também carrega o Whisper, e no Mac as duas bibliotecas
+# trazem cópias diferentes do ffmpeg que conflitam no mesmo processo.
+def _quadro_cinza(arq: Path, t: float) -> Image.Image | None:
+    out = subprocess.run([ffmpeg(), "-v", "error", "-ss", f"{max(0, t):.3f}", "-i", str(arq), "-frames:v", "1",
+                          "-f", "image2pipe", "-vcodec", "png", "-"], capture_output=True).stdout
+    if not out:
+        return None
+    return Image.open(io.BytesIO(out)).convert("L")
+
+
+def _pequeno(img: Image.Image, tam) -> np.ndarray:
+    return np.asarray(img.resize(tam, Image.BOX), dtype=np.int16)
+
+
+PEQ = (72, 128)
+
+
+def _cinza_cheio(arq: Path, t: float) -> np.ndarray | None:
+    q = _quadro_cinza(arq, t)
+    if q is None:
+        return None
+    w, h = q.size
+    return _pequeno(q, PEQ if h > w else PEQ[::-1])
+
+
+def _recorte(original: Path, t_orig: float, t_saida: float, geo: dict, info: dict) -> np.ndarray:
+    """O quadro original passado pelo mesmo zoom/recorte que a montagem aplicou no instante t_saida."""
+    q = _quadro_cinza(original, t_orig)
+    W, H = q.size
+    ow, oh = geo["ow"], geo["oh"]
+    tam = PEQ if oh > ow else PEQ[::-1]
+    if geo["modo"] == "desfocado":
+        s = min(ow / W, oh / H)
+        caixa = q.resize((int(W * s), int(H * s)), Image.BOX)
+        tela = Image.new("L", (ow, oh), 0)
+        tela.paste(caixa, ((ow - caixa.width) // 2, (oh - caixa.height) // 2))
+        return _pequeno(tela, tam)
+    z, cx, cy = 1.0, 0.5, 0.5
+    for a, b, zz, px, py in geo["planos"]:
+        if a <= t_saida < b:
+            z = zz * (1 + geo["respiracao"] * (t_saida - a) / max(0.04, b - a))
+            cx, cy = px, py
+            break
+    cw, ch, yf = geo["cw"], geo["ch"], geo["yf"]
+    W2, H2 = W * z, H * z
+    x0 = min(max(cx * W2 - cw / 2, 0), W2 - cw)
+    y0 = min(max(cy * H2 - ch * yf, 0), H2 - ch)
+    reg = q.crop((int(x0 / z), int(y0 / z), int((x0 + cw) / z), int((y0 + ch) / z)))
+    return _pequeno(reg, tam)
+
+
+def _atividade(arq: Path, t0: float, n: int, F: int, retrato: bool) -> np.ndarray:
+    """Quanto a imagem muda de um quadro para o seguinte (boca, mãos). Não depende de zoom nem recorte."""
+    tam = "72:128" if retrato else "128:72"
+    out = subprocess.run([ffmpeg(), "-v", "error", "-ss", f"{max(0, t0):.3f}", "-i", str(arq), "-vf", f"fps={F},scale={tam},format=gray",
+                          "-frames:v", str(n), "-f", "rawvideo", "-"], capture_output=True).stdout
+    q = np.frombuffer(out, np.uint8).astype(np.int16)
+    k = len(q) // (72 * 128)
+    if k < 3:
+        return np.zeros(0)
+    q = q[: k * 72 * 128].reshape(k, -1)
+    return np.abs(np.diff(q, axis=0)).mean(1)
 
 
 def _db(x, jan):
@@ -87,6 +153,9 @@ def verificar(saida: Path) -> bool:
         prev = e
     if dados["info"]["duracao"] - prev > 0.15:
         tirados.append((prev, dados["info"]["duracao"]))
+    if mapa_d.get("janela"):
+        ja, jb = mapa_d["janela"]
+        tirados = [(max(a, ja), min(b, jb)) for a, b in tirados if b > ja and a < jb]
     mantidos = [m["original"] for m in mapa]
     suspeitos = []
     for a, b in tirados:
@@ -119,14 +188,16 @@ def verificar(saida: Path) -> bool:
 
     # [2b] palavra de um take mantido que a montagem (aperto das pausas) deixou de fora
     perdidas = []
-    if (job / "palavras.json").exists() and (job / "palavras_saida.json").exists():
+    if (job / "palavras.json").exists():
         ws = ler_json(job / "palavras.json")
-        n_saida = len(ler_json(job / "palavras_saida.json"))
         plano = ler_json(mapa_d["takes"])["manter"] if mapa_d.get("takes") else list(range(len(trechos)))
         faixas = []
         for it in plano:
             i, so, eo = (it, None, None) if isinstance(it, int) else it
             faixas.append((so if so is not None else trechos[i][0], eo if eo is not None else trechos[i][1]))
+        if mapa_d.get("janela"):
+            ja, jb = mapa_d["janela"]
+            faixas = [(max(fa, ja), min(fb, jb)) for fa, fb in faixas if fb > ja and fa < jb]
         dentro = [w for w in ws if any(fa <= (w["start"] + w["end"]) / 2 <= fb for fa, fb in faixas)]
         for w in dentro:
             meio = (w["start"] + w["end"]) / 2
@@ -166,18 +237,32 @@ def verificar(saida: Path) -> bool:
     # [4] imagem certa
     F = mapa_d["fps"]
     retrato = info["altura"] > info["largura"]
+    transformado = bool(mapa_d.get("enquadrar")) or mapa_d.get("zoom", "nao") != "nao"
+    ret_orig = dados["info"]["altura"] > dados["info"]["largura"]
     pior = 0
     pontos = [m_ for m_ in mapa if m_["saida"][1] - m_["saida"][0] > 1.0]
     pontos = [pontos[i] for i in np.linspace(0, len(pontos) - 1, min(6, len(pontos))).astype(int)] if pontos else []
     for m_ in pontos:
         (a, _), (sa, sb) = m_["original"], m_["saida"]
         t = (sa + sb) / 2
+        if transformado:
+            geo = mapa_d.get("quadro")
+            if not geo:
+                continue
+            alvo = _cinza_cheio(saida, t)
+            if alvo is None:
+                continue
+            melhor = min(((np.abs(_recorte(original, a + (t - sa) + d / F, t, geo, dados["info"]) - alvo).mean(), abs(d), d)
+                          for d in range(-3, 4)))
+            pior = max(pior, abs(melhor[2]))
+            continue
         ref = _cinza(original, a + (t - sa), retrato)
         # média (não mediana: em quadro parado a mediana dá 0 em tudo) e, no empate, o menor desvio
         melhor = min(((np.abs(_cinza(saida, t + d / F, retrato) - ref).mean(), abs(d), d) for d in range(-3, 4)))[1:]
         pior = max(pior, abs(melhor[1]))
     if pontos:
-        log(f"[4] imagem × original ({len(pontos)} pontos): pior desvio {pior} quadro(s)")
+        modo = "mesmo zoom e recorte refeitos no original" if transformado else "quadro a quadro"
+        log(f"[4] imagem × original ({len(pontos)} pontos, {modo}): pior desvio {pior} quadro(s)")
         ok &= pior <= 2
         relatorio["imagem_desvio_quadros"] = int(pior)
 

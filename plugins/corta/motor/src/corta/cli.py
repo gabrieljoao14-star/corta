@@ -5,9 +5,12 @@
   corta transcrever VIDEO [--idioma pt] [--modelo large-v2]
   corta trechos VIDEO [--isolado auto|todos|nenhum]
   corta montar VIDEO [--takes takes.json] [--apertar|--sem-apertar] [--saida ARQ]
+               [--formato 9:16] [--enquadrar rosto|centro|desfocado] [--zoom nao|leve|normal|forte]
   corta legendar VIDEO [--estilo creator-bold] [--ajuste chave=valor …] [--saida ARQ]
   corta previa VIDEO [--estilo …] [--em SEGUNDOS]
   corta corrigir VIDEO lerite=holerite ["lei rite=holerite" …]
+  corta texto VIDEO
+  corta cortar VIDEO --cortes cortes.json [--formato 9:16] [--enquadrar rosto] [--zoom leve] [--legenda ESTILO]
   corta estilos
   corta verificar SAIDA
   corta amostra
@@ -63,6 +66,9 @@ def main(argv=None):
     g.add_argument("--apertar", dest="apertar", action="store_true", default=None)
     g.add_argument("--sem-apertar", dest="apertar", action="store_false")
     p.add_argument("--saida", type=Path)
+    p.add_argument("--formato", default=None, choices=["original", "9:16", "4:5", "1:1", "16:9"])
+    p.add_argument("--enquadrar", default="rosto", choices=["rosto", "centro", "desfocado"])
+    p.add_argument("--zoom", default="nao", choices=["nao", "leve", "normal", "forte"])
 
     for nome in ("legendar", "previa"):
         p = sub.add_parser(nome, help="queima a legenda" if nome == "legendar" else "quadro de prévia da legenda")
@@ -79,6 +85,19 @@ def main(argv=None):
     p = sub.add_parser("corrigir", help="corrige palavras erradas da transcrição (errado=certo)")
     p.add_argument("video", type=Path)
     p.add_argument("correcoes", nargs="+", metavar="ERRADO=CERTO")
+
+    p = sub.add_parser("texto", help="transcrição em frases com o tempo (para escolher cortes)")
+    p.add_argument("video", type=Path)
+
+    p = sub.add_parser("cortar", help="gera os cortes de um vídeo longo a partir de cortes.json")
+    p.add_argument("video", type=Path)
+    p.add_argument("--cortes", type=Path, required=True)
+    p.add_argument("--formato", default="9:16", choices=["original", "9:16", "4:5", "1:1", "16:9"])
+    p.add_argument("--enquadrar", default="rosto", choices=["rosto", "centro", "desfocado"])
+    p.add_argument("--zoom", default="nao", choices=["nao", "leve", "normal", "forte"])
+    p.add_argument("--legenda", default=None, metavar="ESTILO")
+    p.add_argument("--ajuste", action="append", metavar="CHAVE=VALOR")
+    p.add_argument("--takes", type=Path)
 
     sub.add_parser("estilos", help="lista os estilos de legenda")
 
@@ -104,7 +123,8 @@ def main(argv=None):
             listar(a.video, isolado=a.isolado, idioma=a.idioma)
         elif a.cmd == "montar":
             from .montar import montar
-            montar(a.video, takes=a.takes, apertar=a.apertar, saida=a.saida)
+            montar(a.video, takes=a.takes, apertar=a.apertar, saida=a.saida, formato=a.formato,
+                   enquadrar=a.enquadrar, zoom=a.zoom)
         elif a.cmd == "legendar":
             from .legenda.queimar import legendar
             legendar(a.video, estilo=a.estilo, ajustes=_ajustes(a.ajuste), palavras=a.palavras, idioma=a.idioma, saida=a.saida)
@@ -114,6 +134,13 @@ def main(argv=None):
         elif a.cmd == "corrigir":
             from .corrigir import corrigir
             corrigir(a.video, a.correcoes)
+        elif a.cmd == "texto":
+            from .cortes import texto
+            texto(a.video)
+        elif a.cmd == "cortar":
+            from .cortes import cortar
+            cortar(a.video, a.cortes, formato=a.formato, enquadrar=a.enquadrar, zoom=a.zoom, legenda=a.legenda,
+                   ajustes=_ajustes(a.ajuste), takes=a.takes)
         elif a.cmd == "estilos":
             from .legenda.estilos import listar_estilos
             listar_estilos()

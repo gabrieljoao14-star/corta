@@ -13,7 +13,7 @@ from pathlib import Path
 from PIL import Image
 
 from ..base import (Cronometro, CortaErro, conferir_arquivo_local, ffmpeg, info_video, ler_json, log, pasta_job,
-                    registrar_saida, rodar, saida_livre, saida_registrada, salvar_json)
+                    registrar_saida, nome_seguro, rodar, saida_livre, saida_registrada, salvar_json)
 from ..perfil import args_video, carregar as carregar_perfil
 from .blocos import linha_do_tempo, montar_blocos
 from .desenho import Desenhista
@@ -81,6 +81,14 @@ def _eventos(est: dict, tl: list[dict], des: Desenhista, pasta: Path):
     return ev, n_img[0]
 
 
+def _job(video: Path) -> Path:
+    """Os dados ficam na pasta do vídeo ORIGINAL: a pasta de entrega (ex.: a dos cortes) fica limpa."""
+    reg = saida_registrada(video)
+    if reg and reg.get("job") and Path(reg["job"]).exists():
+        return Path(reg["job"])
+    return pasta_job(video)
+
+
 def _preparar(video: Path, estilo: str, ajustes: dict, palavras: Path | None, idioma: str):
     video = video.resolve()
     conferir_arquivo_local(video)
@@ -98,8 +106,8 @@ def _preparar(video: Path, estilo: str, ajustes: dict, palavras: Path | None, id
 def legendar(video: Path, estilo: str = "creator-bold", ajustes: dict | None = None, palavras: Path | None = None,
              idioma: str = "pt", saida: Path | None = None) -> Path:
     video, info, est, tl, des, origem = _preparar(video, estilo, ajustes or {}, palavras, idioma)
-    job = pasta_job(video)
-    pasta = job / f"legenda_{est['id']}"
+    job = _job(video)
+    pasta = job / f"_legenda_{nome_seguro(video.stem)}"
     shutil.rmtree(pasta, ignore_errors=True)
     pasta.mkdir(parents=True)
     log(f"== legenda '{est['nome']}' · {len(tl)} blocos · palavras de: {origem}")
@@ -130,11 +138,12 @@ def legendar(video: Path, estilo: str = "creator-bold", ajustes: dict | None = N
            "-map", "[v]", "-map", "0:a?", *args_video(perfil), "-c:a", "copy", "-movflags", "+faststart", saida],
           descricao="gravar vídeo com legenda")
     c.fim()
-    salvar_json(job / f"legenda_{est['id']}.json", {"estilo": est, "blocos": tl, "saida": str(saida)})
+    arq_blocos = job / f"legenda_{nome_seguro(Path(saida).stem)}.json"
+    salvar_json(arq_blocos, {"estilo": est, "blocos": tl, "saida": str(saida)})
     reg = saida_registrada(video) or {}
     registrar_saida(job, {"arquivo": str(Path(saida).resolve()), "etapa": "legendar", "estilo": est["id"],
                           "palavras": origem if Path(origem).exists() else None, "mapa": reg.get("mapa"),
-                          "origem": str(video), "blocos": str(job / f"legenda_{est['id']}.json")})
+                          "origem": str(video), "blocos": str(arq_blocos)})
     shutil.rmtree(pasta, ignore_errors=True)
     log(f"   → {saida}")
     return saida
@@ -144,7 +153,7 @@ def previa(video: Path, estilo: str = "creator-bold", ajustes: dict | None = Non
            idioma: str = "pt", em: float | None = None) -> Path:
     """3 quadros lado a lado com a legenda aplicada, para aprovar antes de gravar o vídeo inteiro."""
     video, info, est, tl, des, _ = _preparar(video, estilo, ajustes or {}, palavras, idioma)
-    job = pasta_job(video)
+    job = _job(video)
     if em is not None:
         escolhidos = [min(range(len(tl)), key=lambda i: abs(tl[i]["inicio"] - em))]
     else:
@@ -166,7 +175,7 @@ def previa(video: Path, estilo: str = "creator-bold", ajustes: dict | None = Non
     folha = Image.new("RGB", (w * len(quadros) + 20 * (len(quadros) - 1), h), (20, 20, 24))
     for i, q in enumerate(quadros):
         folha.paste(q.convert("RGB").resize((w, h), Image.LANCZOS), (i * (w + 20), 0))
-    destino = job / f"previa_{est['id']}.png"
+    destino = job / f"previa_{nome_seguro(video.stem)}_{est['id']}.png"
     folha.save(destino)
     log(f"   prévia → {destino}")
     return destino

@@ -44,7 +44,7 @@ def corrigir(video: Path, correcoes: list[str]) -> int:
         arquivos.append(Path(reg["palavras"]))
         if reg.get("job") and (Path(reg["job"]) / "palavras.json").exists():
             arquivos.append(Path(reg["job"]) / "palavras.json")
-    job = pasta_job(video)
+    job = Path(reg["job"]) if reg and reg.get("job") else pasta_job(video)
     for nome in ("palavras.json", "palavras_saida.json", "palavras_direto.json"):
         if (job / nome).exists():
             arquivos.append(job / nome)

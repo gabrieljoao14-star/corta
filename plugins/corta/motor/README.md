@@ -17,9 +17,30 @@ nenhuma saída é sobrescrita (`nome (editado).mp4`, `nome (editado) (2).mp4`…
 | 5. Montagem | `corta montar VIDEO --takes …/takes.json` | `VIDEO (editado).mp4` |
 | 6. Prévia da legenda | `corta previa "VIDEO (editado).mp4" --estilo creator-bold` | `previa_creator-bold.png` |
 | 7. Legenda | `corta legendar "VIDEO (editado).mp4" --estilo creator-bold --ajuste destaque=#22D3EE` | `VIDEO (legendado).mp4` |
-| 8. Conferência | `corta verificar "VIDEO (legendado).mp4"` | `RESULTADO: OK ✅` |
+| 8. Conferência | `corta verificar "VIDEO (legendado).mp4"` | `RESULTADO: OK ✅` (ou com avisos para conferir) |
 
 Só tirar silêncio: pular 2–4 e rodar `corta montar VIDEO` sem `--takes`.
+Correção de palavra errada da transcrição (antes da legenda): `corta corrigir "VIDEO (editado).mp4" lerite=holerite`.
+
+### Formato, enquadramento e zoom (na mesma passada da montagem)
+`corta montar VIDEO --takes … --formato 9:16 --enquadrar rosto --zoom normal`
+- `--formato`: original (padrão), 9:16, 4:5, 1:1, 16:9.
+- `--enquadrar`: `rosto` (segue o rosto; detector YuNet, igual no Mac e no Windows), `centro`, `desfocado`
+  (vídeo inteiro sobre fundo desfocado).
+- `--zoom`: nao, leve, normal, forte. Troca o enquadramento em cada corte da montagem (esconde o pulo),
+  no começo de frase e no meio de frase longa; respiração lenta de 1,5 % dentro do plano.
+
+## Cortes de vídeo longo (live, podcast, aula)
+| Etapa | Comando |
+|---|---|
+| 1. Preparar com ritmo natural | `corta preparar LIVE.mp4 --ritmo natural` e `corta transcrever LIVE.mp4` |
+| 2. Ler o texto inteiro | `corta texto LIVE.mp4` (frases com tempo) |
+| 3. Escolher e aprovar | o Claude escreve `cortes.json` e mostra a tabela para a pessoa aprovar |
+| 4. Gerar | `corta cortar LIVE.mp4 --cortes cortes.json --formato 9:16 --zoom leve --legenda creator-bold` |
+
+`cortes.json`: `{"cortes": [{"nome": "Prazo que ninguém conta", "inicio": "12:03.4", "fim": "12:58.0"}]}`.
+Bom corte: gancho nos 3 primeiros segundos, se sustenta sozinho, fecha a ideia, 25–90 s.
+Os cortes saem em `LIVE - cortes/01 - nome (legendado).mp4`, já sem pausas e no rosto.
 Só legendar um vídeo pronto: `corta legendar VIDEO --estilo …` (transcreve sozinho).
 
 ### `takes.json`
