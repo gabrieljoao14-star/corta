@@ -1,0 +1,53 @@
+# Motor do /corta
+
+Comandos de edição que o Claude roda. Funcionam no Mac e no Windows; o computador é medido uma vez
+(`corta perfil`) e as configurações saem dali. Rodar sempre com `uv run --project <esta pasta> corta …`.
+
+Os dados de cada vídeo ficam em `<pasta do vídeo>/_corta/<nome>/`. O original nunca é alterado e
+nenhuma saída é sobrescrita (`nome (editado).mp4`, `nome (editado) (2).mp4`…).
+
+## Fluxo de um vídeo falado
+
+| Etapa | Comando | O que sai |
+|---|---|---|
+| 1. Voz e silêncio | `corta preparar VIDEO --voz leve --ritmo rapido` | `voz.wav`, `trechos.json` |
+| 2. Transcrição literal | `corta transcrever VIDEO` | `palavras.json` |
+| 3. Lista para decidir os takes | `corta trechos VIDEO` | lista `T000…` com ⚠ nos suspeitos, `trechos_texto.json` |
+| 4. Decisão | o Claude escreve `takes.json` e mostra para a pessoa | `takes.json` |
+| 5. Montagem | `corta montar VIDEO --takes …/takes.json` | `VIDEO (editado).mp4` |
+| 6. Prévia da legenda | `corta previa "VIDEO (editado).mp4" --estilo creator-bold` | `previa_creator-bold.png` |
+| 7. Legenda | `corta legendar "VIDEO (editado).mp4" --estilo creator-bold --ajuste destaque=#22D3EE` | `VIDEO (legendado).mp4` |
+| 8. Conferência | `corta verificar "VIDEO (legendado).mp4"` | `RESULTADO: OK ✅` |
+
+Só tirar silêncio: pular 2–4 e rodar `corta montar VIDEO` sem `--takes`.
+Só legendar um vídeo pronto: `corta legendar VIDEO --estilo …` (transcreve sozinho).
+
+### `takes.json`
+```json
+{"manter": [3, 4, [7, 12.40, null], 9],
+ "notas": [["0:21", "tirado", "recomeço: Hoje eu vou…"], ["0:24", "MANTIDO", "último take completo"]]}
+```
+Número = trecho inteiro. `[trecho, início, fim]` = corta dentro do trecho (tempo do original; `null` mantém a borda).
+
+### Critério dos takes (aprovado nas notas 01)
+- Frase recomeçada ou repetida: fica o **último take completo**.
+- Sai toda fala de **quem está filmando** e orientação de atuação.
+- Sai ênfase solta que não faz sentido sozinha e conversa depois do fim.
+- Trecho com ⚠ (lento, palavra esticada, repetição, curto): ler a versão isolada antes de decidir.
+- Decisão de conteúdo é da pessoa: mostrar a lista MANTIDO/tirado antes de montar.
+
+## Legenda
+`corta estilos` lista os estilos. Ajustes aceitos (`--ajuste chave=valor`, pode repetir):
+`fonte` (Montserrat, Poppins, Anton, Bebas Neue, Luckiest Guy, DM Sans, Playfair Display, Inter),
+`cor`, `destaque`, `cor_contorno`, `cor_brilho`, `fundo_bloco` (#RRGGBB), `tipo_destaque`
+(cor, caixa, escala, sublinhado, nenhum), `contorno` (0–20), `sombra`, `brilho`, `palavras` (1–8),
+`tamanho` (0,4–2,5), `posicao` (baixo, centro, topo), `animacao` (pop, pulo, aparecer, subir, nenhuma),
+`letras` (maiusculas, normal, minusculas), `giro_destaque`, `escala_destaque`.
+
+A legenda é desenhada em imagem com as fontes do plugin (licença aberta) e colada pelo ffmpeg:
+sai igual no Mac e no Windows.
+
+## Teste
+`corta amostra` edita `assets/amostra/amostra.mp4` do começo ao fim e confere. É o último passo da
+instalação e roda no GitHub em Mac e Windows a cada mudança (`.github/workflows/motor.yml`).
+A amostra atual tem voz sintética do Mac (provisória): trocar por uma gravação própria de 15–20 s.

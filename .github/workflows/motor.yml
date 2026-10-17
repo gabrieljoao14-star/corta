@@ -1,0 +1,32 @@
+name: motor
+# Edita o vídeo de amostra do começo ao fim no Mac e no Windows a cada mudança.
+# Se quebrar em um dos dois, a versão não sai.
+on:
+  push:
+  pull_request:
+jobs:
+  amostra:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: plugins/corta/motor
+    env:
+      CORTA_MODELO: small   # modelo menor só para o teste caber no tempo do GitHub
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: ffmpeg (Mac)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+      - name: ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y --no-progress
+      - run: uv sync --python 3.12
+      - run: uv run corta perfil --recalcular
+      - run: uv run --group dev pytest -q
+      - run: uv run corta amostra
