@@ -39,6 +39,15 @@ Correção de palavra errada da transcrição (antes da legenda): `corta corrigi
 | 4. Gerar | `corta cortar LIVE.mp4 --cortes cortes.json --formato 9:16 --zoom leve --legenda creator-bold` |
 
 `cortes.json`: `{"cortes": [{"nome": "Prazo que ninguém conta", "inicio": "12:03.4", "fim": "12:58.0"}]}`.
+
+### Aula ou tutorial com tela + câmera (Zoom, Meet, OBS)
+`corta regioes LIVE.mp4` acha a tela e a câmera sozinho (fundo preto entre elas + o rosto) e apara as
+margens sem conteúdo da tela; grava `regioes.png` com as caixas desenhadas: **olhar antes de cortar**.
+Depois: `corta cortar LIVE.mp4 --cortes cortes.json --enquadrar tela-camera --legenda creator-bold`.
+Sai vertical com a tela em cima, uma faixa escura com a legenda no meio e a câmera embaixo (câmera
+pequena não estica mais que 3,6×; a sobra vai para a faixa). Zoom fica desligado nesse layout.
+Se a detecção errar: `--regioes minhas.json` com `{"tela": [x, y, larg, alt], "camera": [x, y, larg, alt]}`
+em pixels do vídeo original.
 Bom corte: gancho nos 3 primeiros segundos, se sustenta sozinho, fecha a ideia, 25–90 s.
 Os cortes saem em `LIVE - cortes/01 - nome (legendado).mp4`, já sem pausas e no rosto.
 Só legendar um vídeo pronto: `corta legendar VIDEO --estilo …` (transcreve sozinho).

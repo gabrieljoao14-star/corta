@@ -64,12 +64,24 @@ def _cinza_cheio(arq: Path, t: float) -> np.ndarray | None:
     return _pequeno(q, PEQ if h > w else PEQ[::-1])
 
 
+def _cinza_hex(h: str) -> int:
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return int(0.299 * r + 0.587 * g + 0.114 * b)
+
+
 def _recorte(original: Path, t_orig: float, t_saida: float, geo: dict, info: dict) -> np.ndarray:
     """O quadro original passado pelo mesmo zoom/recorte que a montagem aplicou no instante t_saida."""
     q = _quadro_cinza(original, t_orig)
     W, H = q.size
     ow, oh = geo["ow"], geo["oh"]
     tam = PEQ if oh > ow else PEQ[::-1]
+    if geo["modo"] == "tela-camera":
+        tela = Image.new("L", (ow, oh), _cinza_hex(geo["cor_faixa"]))
+        tx, ty, tw, th = geo["tela"]
+        tela.paste(q.crop((tx, ty, tx + tw, ty + th)).resize((ow, geo["ht"]), Image.BOX), (0, 0))
+        cx, cy, cw, ch = geo["camera"]
+        tela.paste(q.crop((cx, cy, cx + cw, cy + ch)).resize((ow, geo["hc"]), Image.BOX), (0, geo["ht"] + geo["faixa"]))
+        return _pequeno(tela, tam)
     if geo["modo"] == "desfocado":
         s = min(ow / W, oh / H)
         caixa = q.resize((int(W * s), int(H * s)), Image.BOX)

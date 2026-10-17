@@ -2,7 +2,9 @@
 tempo da SAÍDA (aplicados na mesma passada da montagem, sem gravar o vídeo de novo).
 
 - formato: original, 9:16, 4:5, 1:1, 16:9.
-- enquadrar: rosto (segue o rosto), centro, desfocado (vídeo inteiro sobre fundo desfocado).
+- enquadrar: rosto (segue o rosto), centro, desfocado (vídeo inteiro sobre fundo desfocado),
+  tela-camera (gravação de aula/tutorial: tela em cima, faixa da legenda no meio, câmera embaixo;
+  layout aprovado nos 11 shorts da Aula 1).
 - zoom: nao, leve, normal, forte. Troca o enquadramento no começo das frases e nos cortes (esconde o
   "pulo" do corte e parece que tem duas câmeras), mais 1 troca no meio de frase longa (> 4,5 s).
   Escalas do "normal" = as validadas nos criativos (1,1 / 1,0 / 1,18 / 1,06 / 1,24 / 1,0), com uma
@@ -71,14 +73,68 @@ def planos(palavras: list[dict], pedacos: list[list[float]], duracao: float) -> 
     return [(a, final[i + 1] if i + 1 < len(final) else duracao) for i, a in enumerate(final)]
 
 
+FAIXA = 320           # altura da faixa da legenda no layout tela + câmera (em 1920)
+COR_FAIXA = "111318"
+TELA_MAX, TELA_MIN, CAMERA_MIN = 1000, 540, 560
+AMPLIAR_CAMERA = 3.6  # câmera pequena na gravação não estica mais que isso (borra); a sobra vai para a faixa
+
+
+def _even(v: float) -> int:
+    return max(2, int(v) // 2 * 2)
+
+
+def tela_camera(regioes: dict, ow: int = 1080, oh: int = 1920) -> tuple[str, dict]:
+    """Tela em cima (largura toda), faixa escura para a legenda, câmera embaixo enquadrada no rosto."""
+    tx, ty, tw, th = regioes["tela"]
+    ht = ow * th / tw
+    if ht > TELA_MAX:                      # tela "alta" (documento): mostra o topo
+        th = _even(tw * TELA_MAX / ow)
+        ht = TELA_MAX
+    elif ht < TELA_MIN:                    # tela muito larga: corta as laterais, mantém o centro
+        nw = _even(th * ow / TELA_MIN)
+        tx, tw, ht = tx + (tw - nw) // 2, nw, TELA_MIN
+    ht = _even(ht)
+    cx, cy, cw, ch = regioes["camera"]
+    faixa = FAIXA
+    hc = oh - ht - faixa
+    if hc < CAMERA_MIN:
+        faixa = max(200, oh - ht - CAMERA_MIN)
+        hc = oh - ht - faixa
+    limite = _even(max(CAMERA_MIN, ch * AMPLIAR_CAMERA))
+    if hc > limite:
+        faixa += hc - limite
+        hc = limite
+    fx, fy = regioes.get("rosto", [cx + cw / 2, cy + ch / 2])
+    W, H = regioes.get("video", [None, None])
+    px = fx * W if W and fx <= 1 else fx
+    py = fy * H if H and fy <= 1 else fy
+    alvo = ow / hc
+    if cw / ch > alvo:                     # câmera mais larga que o espaço: corta as laterais no rosto
+        nw = _even(ch * alvo)
+        nx = int(min(max(px - nw / 2, cx), cx + cw - nw))
+        cam = [nx, cy, nw, _even(ch)]
+    else:                                  # mais alta: corta em cima/embaixo, rosto a 40 %
+        nh = _even(cw / alvo)
+        ny = int(min(max(py - nh * 0.4, cy), cy + ch - nh))
+        cam = [cx, ny, _even(cw), nh]
+    cadeia = (f",split=2[tc_t][tc_c];[tc_t]crop={_even(tw)}:{_even(th)}:{tx}:{ty},scale={ow}:{ht}:flags=lanczos,"
+              f"pad={ow}:{ht + faixa}:0:0:color=0x{COR_FAIXA}[tc_topo];"
+              f"[tc_c]crop={cam[2]}:{cam[3]}:{cam[0]}:{cam[1]},scale={ow}:{hc}:flags=lanczos[tc_cam];"
+              f"[tc_topo][tc_cam]vstack=inputs=2,setsar=1")
+    geo = {"modo": "tela-camera", "ow": ow, "oh": oh, "tela": [tx, ty, _even(tw), _even(th)], "ht": ht, "faixa": faixa,
+           "camera": cam, "hc": hc, "cor_faixa": COR_FAIXA, "y_legenda": (ht + faixa / 2) / oh}
+    return cadeia, geo
+
+
 def filtro(largura: int, altura: int, formato: str | None, modo: str, zoom: str,
-           planos_saida: list[tuple[float, float]], rosto_por_plano: list[tuple[float, float]]) -> tuple[str, int, int, dict]:
+           planos_saida: list[tuple[float, float]], rosto_por_plano: list[tuple[float, float]],
+           regioes: dict | None = None) -> tuple[str, int, int, dict]:
     """Cadeia de filtros (começa com vírgula), o tamanho final e a geometria de cada plano
     (guardada para a conferência refazer o mesmo recorte no quadro original)."""
     if zoom not in ZOOMS:
         raise CortaErro(f"zoom='{zoom}' não existe. Use: {', '.join(ZOOMS)}")
-    if modo not in ("rosto", "centro", "desfocado"):
-        raise CortaErro(f"enquadrar='{modo}' não existe. Use: rosto, centro ou desfocado.")
+    if modo not in ("rosto", "centro", "desfocado", "tela-camera"):
+        raise CortaErro(f"enquadrar='{modo}' não existe. Use: rosto, centro, desfocado ou tela-camera.")
     if formato in (None, "", "original"):
         ow, oh = largura, altura
     elif formato in FORMATOS:
@@ -86,6 +142,14 @@ def filtro(largura: int, altura: int, formato: str | None, modo: str, zoom: str,
     else:
         raise CortaErro(f"formato='{formato}' não existe. Use: original, {', '.join(FORMATOS)}")
     alvo = ow / oh
+
+    if modo == "tela-camera":
+        if not regioes:
+            raise CortaErro("O layout tela-camera precisa das regiões (corta regioes VIDEO).")
+        if (ow, oh) != (1080, 1920):
+            raise CortaErro("O layout tela-camera é vertical: use --formato 9:16.")
+        cadeia, geo = tela_camera(regioes, ow, oh)
+        return cadeia, ow, oh, geo
 
     if modo == "desfocado":
         geo = {"modo": "desfocado", "ow": ow, "oh": oh}

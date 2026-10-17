@@ -69,7 +69,8 @@ def texto(video: Path) -> list[dict]:
 
 
 def cortar(video: Path, arquivo_cortes: Path, formato: str = "9:16", enquadrar: str = "rosto", zoom: str = "nao",
-           legenda: str | None = None, ajustes: dict | None = None, takes: Path | None = None) -> list[Path]:
+           legenda: str | None = None, ajustes: dict | None = None, takes: Path | None = None,
+           regioes: Path | None = None) -> list[Path]:
     from .legenda.queimar import legendar
     from .montar import montar
     video = video.resolve()
@@ -87,7 +88,7 @@ def cortar(video: Path, arquivo_cortes: Path, formato: str = "9:16", enquadrar: 
         nome = f"{n:02d} - {nome_seguro(c.get('nome') or f'corte {n}')}"
         log(f"\n######## corte {n}/{len(lista)}: {nome} [{_mmss(ini)}–{_mmss(fim)}]")
         saida = montar(video, takes=takes, apertar=True, saida=pasta / f"{nome}.mp4", formato=formato,
-                       enquadrar=enquadrar, zoom=zoom, janela=(ini, fim))
+                       enquadrar=enquadrar, zoom=zoom, janela=(ini, fim), regioes=regioes)
         if legenda:
             final = legendar(saida, estilo=legenda, ajustes=ajustes or {}, saida=pasta / f"{nome} (legendado).mp4")
             feitos.append(final)

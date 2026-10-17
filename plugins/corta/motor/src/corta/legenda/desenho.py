@@ -55,6 +55,10 @@ class Desenhista:
         self.y_centro = int(altura * yc)
         self.y_faixa = max(0, min(altura - self.faixa_h, self.y_centro - self.faixa_h // 2))
 
+    def centralizar_em(self, fracao: float) -> None:
+        self.y_centro = int(self.H * fracao)
+        self.y_faixa = max(0, min(self.H - self.faixa_h, self.y_centro - self.faixa_h // 2))
+
     def _tamanho(self, px: int) -> None:
         """Tamanho da letra em uso (diminui num bloco com palavra mais larga que a tela)."""
         self.px = px

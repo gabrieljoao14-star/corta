@@ -139,7 +139,7 @@ def _plano_na_janela(trechos, plano, ini: float, fim: float):
 
 def montar(video: Path, takes: Path | None = None, apertar: bool | None = None, saida: Path | None = None,
            formato: str | None = None, enquadrar: str = "rosto", zoom: str = "nao",
-           janela: tuple[float, float] | None = None) -> Path:
+           janela: tuple[float, float] | None = None, regioes: Path | None = None) -> Path:
     from .enquadrar import filtro as filtro_quadro, planos
     from .rosto import amostras, posicao
     video = video.resolve()
@@ -199,11 +199,20 @@ def montar(video: Path, takes: Path | None = None, apertar: bool | None = None, 
 
     # enquadramento e zoom: planos na linha do tempo da saída, rosto medido no original
     cadeia, ow, oh, geo = "", info["largura"], info["altura"], None
+    if enquadrar == "tela-camera" and formato in (None, "", "original"):
+        formato = "9:16"
     precisa_quadro = (formato not in (None, "", "original")) or zoom != "nao"
     if precisa_quadro:
         lista_planos = planos(palavras_saida, [m["saida"] for m in mapa], t_out)
-        rostos = []
-        if enquadrar == "rosto":
+        rostos, reg_tc = [], None
+        if enquadrar == "tela-camera":
+            from .regioes import carregar as carregar_regioes
+            reg_tc = carregar_regioes(video, regioes, janela)
+            if zoom != "nao":
+                log("   (zoom fica desligado no layout tela + câmera)")
+                zoom = "nao"
+            rostos = [(0.5, 0.5)] * len(lista_planos)
+        elif enquadrar == "rosto":
             grupos = []
             for m in mapa:
                 a, b = m["original"]
@@ -227,7 +236,8 @@ def montar(video: Path, takes: Path | None = None, apertar: bool | None = None, 
             log(f"   rosto encontrado em {achou} de {len(lista_planos)} planos")
         else:
             rostos = [(0.5, 0.5)] * len(lista_planos)
-        cadeia, ow, oh, geo = filtro_quadro(info["largura"], info["altura"], formato, enquadrar, zoom, lista_planos, rostos)
+        cadeia, ow, oh, geo = filtro_quadro(info["largura"], info["altura"], formato, enquadrar, zoom, lista_planos, rostos,
+                                            reg_tc)
 
     wav = job / "audio_montado.wav"
     sf.write(wav, np.vstack(pedacos), sr, subtype="PCM_16")

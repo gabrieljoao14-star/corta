@@ -101,6 +101,12 @@ def _preparar(video: Path, estilo: str, ajustes: dict, palavras: Path | None, id
     blocos = montar_blocos(ws, est["palavras"])
     tl = linha_do_tempo(blocos, info["duracao"])
     des = Desenhista(est, info["largura"], info["altura"])
+    # layout tela + câmera: a legenda vai para a faixa do meio (a não ser que a pessoa peça outra posição)
+    reg = saida_registrada(video) or {}
+    if "posicao" not in (ajustes or {}) and reg.get("mapa") and Path(reg["mapa"]).exists():
+        geo = ler_json(reg["mapa"]).get("quadro") or {}
+        if geo.get("y_legenda"):
+            des.centralizar_em(geo["y_legenda"])
     return video, info, est, tl, des, origem
 
 
