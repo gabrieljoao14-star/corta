@@ -66,7 +66,19 @@ Número = trecho inteiro. `[trecho, início, fim]` = corta dentro do trecho (tem
 `letras` (maiusculas, normal, minusculas), `giro_destaque`, `escala_destaque`.
 
 A legenda é desenhada em imagem com as fontes do plugin (licença aberta) e colada pelo ffmpeg:
-sai igual no Mac e no Windows.
+sai igual no Mac e no Windows. `--estilo nenhuma` grava só o acabamento abaixo, sem legenda.
+
+### Acabamento (na mesma gravação da legenda)
+`corta legendar VIDEO --estilo creator-bold --gancho "Seu cliente pediu justiça gratuita? | A resposta mudou" --cta "Aula gratuita · Toque em Saiba mais" --cta-em 50.3 --barra --sons poucos`
+- `--gancho`: texto no topo, logo abaixo dos 16 % que o Reels cobre; palavras entram uma a uma.
+  `pergunta | resposta` = 2 níveis (resposta numa faixa na cor de destaque). Sai sozinho no fim da 1ª
+  pergunta ou em 3,5 s (`--gancho-ate` muda). Texto do gancho e do CTA é decisão da pessoa: mostrar antes.
+- `--cta`: chamada que sobe acima da legenda, fora dos 24 % de baixo. `--cta-em` = segundo em que entra
+  (o começo da fala da chamada, tirado da transcrição); padrão 4 s antes do fim. "A · B" quebra em 2 linhas.
+  No anúncio do Meta o link é o botão: use "Toque em Saiba mais", não "link na descrição".
+- `--barra`: barra de progresso no topo, na cor de destaque.
+- `--sons`: `poucos` = impacto no gancho, pop no CTA e até 3 whooshes nas maiores trocas de zoom;
+  `todos` = whoosh em toda troca de plano. Sons gerados por código (sem direitos autorais), baixinhos.
 
 ## Teste
 `corta amostra` edita `assets/amostra/amostra.mp4` do começo ao fim e confere. É o último passo da

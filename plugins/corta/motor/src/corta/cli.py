@@ -6,7 +6,8 @@
   corta trechos VIDEO [--isolado auto|todos|nenhum]
   corta montar VIDEO [--takes takes.json] [--apertar|--sem-apertar] [--saida ARQ]
                [--formato 9:16] [--enquadrar rosto|centro|desfocado] [--zoom nao|leve|normal|forte]
-  corta legendar VIDEO [--estilo creator-bold] [--ajuste chave=valor …] [--saida ARQ]
+  corta legendar VIDEO [--estilo creator-bold|nenhuma] [--ajuste chave=valor …] [--saida ARQ]
+                 [--gancho "pergunta | resposta"] [--cta "Toque em Saiba mais"] [--barra] [--sons poucos]
   corta previa VIDEO [--estilo …] [--em SEGUNDOS]
   corta corrigir VIDEO lerite=holerite ["lei rite=holerite" …]
   corta texto VIDEO
@@ -79,6 +80,12 @@ def main(argv=None):
         p.add_argument("--idioma", default="pt")
         if nome == "legendar":
             p.add_argument("--saida", type=Path)
+            p.add_argument("--gancho", default=None, help='texto no topo; "pergunta | resposta" faz 2 níveis')
+            p.add_argument("--gancho-ate", type=float, default=None, help="segundo em que o gancho sai (padrão: fim da 1ª frase)")
+            p.add_argument("--cta", default=None, help='chamada no final, ex.: "Toque em Saiba mais"')
+            p.add_argument("--cta-em", type=float, default=None, help="segundo em que a chamada entra (padrão: 4 s antes do fim)")
+            p.add_argument("--barra", action="store_true", help="barra de progresso no topo")
+            p.add_argument("--sons", default="nao", choices=["nao", "poucos", "todos"])
         else:
             p.add_argument("--em", type=float, default=None, help="segundo do vídeo (padrão: meio da 1ª frase)")
 
@@ -127,7 +134,8 @@ def main(argv=None):
                    enquadrar=a.enquadrar, zoom=a.zoom)
         elif a.cmd == "legendar":
             from .legenda.queimar import legendar
-            legendar(a.video, estilo=a.estilo, ajustes=_ajustes(a.ajuste), palavras=a.palavras, idioma=a.idioma, saida=a.saida)
+            legendar(a.video, estilo=a.estilo, ajustes=_ajustes(a.ajuste), palavras=a.palavras, idioma=a.idioma, saida=a.saida,
+                     gancho=a.gancho, gancho_ate=a.gancho_ate, cta=a.cta, cta_em=a.cta_em, barra=a.barra, sons=a.sons)
         elif a.cmd == "previa":
             from .legenda.queimar import previa
             previa(a.video, estilo=a.estilo, ajustes=_ajustes(a.ajuste), palavras=a.palavras, idioma=a.idioma, em=a.em)

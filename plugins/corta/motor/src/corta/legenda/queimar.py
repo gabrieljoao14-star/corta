@@ -7,6 +7,7 @@ As palavras vêm, em ordem de preferência: --palavras; a montagem que gerou est
 from __future__ import annotations
 
 import math
+import os
 import shutil
 from pathlib import Path
 
@@ -103,48 +104,139 @@ def _preparar(video: Path, estilo: str, ajustes: dict, palavras: Path | None, id
     return video, info, est, tl, des, origem
 
 
-def legendar(video: Path, estilo: str = "creator-bold", ajustes: dict | None = None, palavras: Path | None = None,
-             idioma: str = "pt", saida: Path | None = None) -> Path:
-    video, info, est, tl, des, origem = _preparar(video, estilo, ajustes or {}, palavras, idioma)
-    job = _job(video)
-    pasta = job / f"_legenda_{nome_seguro(video.stem)}"
-    shutil.rmtree(pasta, ignore_errors=True)
-    pasta.mkdir(parents=True)
-    log(f"== legenda '{est['nome']}' · {len(tl)} blocos · palavras de: {origem}")
-    c = Cronometro("desenho da legenda")
-    ev, n = _eventos(est, tl, des, pasta)
-    Image.new("RGBA", (info["largura"], des.faixa_h), (0, 0, 0, 0)).save(pasta / "vazio.png")
+def _lista_concat(pasta: Path, ev, duracao: float, vazio: str) -> Path:
     linhas = ["ffconcat version 1.0"]
     t = 0.0
     for a, z, nome in ev:
         if a - t > 0.001:
-            linhas += ["file 'vazio.png'", f"duration {a - t:.4f}"]
-        linhas += [f"file '{nome}'", f"duration {z - a:.4f}"]
+            linhas += [f"file '{vazio}'", f"duration {a - t:.4f}"]
+        linhas += [f"file '{nome}'", f"duration {z - max(a, t):.4f}"]
         t = z
-    linhas += ["file 'vazio.png'", f"duration {max(0.04, info['duracao'] - t + 1):.4f}", "file 'vazio.png'"]
-    lista = pasta / "lista.ffconcat"
+    linhas += [f"file '{vazio}'", f"duration {max(0.04, duracao - t + 1):.4f}", f"file '{vazio}'"]
+    lista = pasta / f"lista_{vazio.split('.')[0]}.ffconcat"
     lista.write_text("\n".join(linhas) + "\n", encoding="utf-8")
+    return lista
+
+
+def _juntar(intervalos: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    out: list[list[float]] = []
+    for a, b in sorted(intervalos):
+        if out and a <= out[-1][1] + 0.05:
+            out[-1][1] = max(out[-1][1], b)
+        else:
+            out.append([a, b])
+    return [(a, b) for a, b in out]
+
+
+def _fim_primeira_frase(tl: list[dict], padrao: float = 3.5) -> float:
+    """Onde o gancho sai: fim da 1ª pergunta se ela vier cedo; senão 3,5 s (entre 2,5 e 4,5 s)."""
+    for b in tl:
+        if b["inicio"] > 4.5:
+            break
+        if b["palavras"] and b["palavras"][-1].endswith("?"):
+            return b["fim"]
+    return padrao
+
+
+def legendar(video: Path, estilo: str = "creator-bold", ajustes: dict | None = None, palavras: Path | None = None,
+             idioma: str = "pt", saida: Path | None = None, gancho: str | None = None, gancho_ate: float | None = None,
+             cta: str | None = None, cta_em: float | None = None, barra: bool = False, sons: str = "nao") -> Path:
+    from .extras import Camada, eventos as eventos_topo, faixa_de_sons, viradas
+    sem_legenda = estilo in ("nenhuma", "nenhum", "sem")
+    video, info, est, tl, des, origem = _preparar(video, "creator-bold" if sem_legenda else estilo, ajustes or {}, palavras, idioma)
+    job = _job(video)
+    pasta = job / f"_legenda_{nome_seguro(video.stem)}"
+    shutil.rmtree(pasta, ignore_errors=True)
+    pasta.mkdir(parents=True)
+    W, H, dur = info["largura"], info["altura"], info["duracao"]
+    if gancho and gancho_ate is None:
+        gancho_ate = min(4.5, max(2.5, _fim_primeira_frase(tl)))
+    partes = ["sem legenda" if sem_legenda else f"legenda '{est['nome']}'"]
+    partes += [nome for nome, ligado in (("gancho", gancho), ("CTA", cta), ("barra", barra)) if ligado]
+    if sons != "nao":
+        partes.append(f"sons {sons}")
+    log(f"== {' · '.join(partes)} · palavras de: {origem}")
+    c = Cronometro("desenho")
+    entradas, filtros, rotulo = [], [], "[0:v]"
+    if not sem_legenda:
+        ev, n = _eventos(est, tl, des, pasta)
+        if gancho and est["posicao"] == "topo":
+            ev = [(a, z, nm) for a, z, nm in ev if a >= gancho_ate]   # legenda no topo espera o gancho sair
+        Image.new("RGBA", (W, des.faixa_h), (0, 0, 0, 0)).save(pasta / "vazio.png")
+        entradas += ["-f", "concat", "-safe", "0", "-i", _lista_concat(pasta, ev, dur, "vazio.png")]
+        filtros.append(f"[1:v]format=rgba[leg];{rotulo}[leg]overlay=x=0:y={des.y_faixa}:shortest=1:format=auto[v1]")
+        rotulo = "[v1]"
+        log(f"   legenda: {n} imagens")
+    camada = Camada(est, W, H)
+    cta_ini = None
+    if gancho or cta:
+        ev_topo = eventos_topo(camada, pasta, dur, gancho, gancho_ate or 0.0, cta, cta_em)
+        if cta:
+            cta_ini = cta_em if cta_em is not None else max(0.0, dur - 4.0)
+        Image.new("RGBA", (W, H), (0, 0, 0, 0)).save(pasta / "vazio_topo.png")
+        entradas += ["-f", "concat", "-safe", "0", "-i", _lista_concat(pasta, ev_topo, dur, "vazio_topo.png")]
+        idx = 1 + (0 if sem_legenda else 1)
+        # a camada cobre a tela inteira: só mistura nos momentos do gancho e do CTA (o resto passa direto)
+        janelas = [f"between(t,{a:.3f},{b:.3f})" for a, b in _juntar([(a, z) for a, z, _ in ev_topo])]
+        quando = "+".join(janelas) or "0"
+        filtros.append(f"[{idx}:v]format=rgba[topo];{rotulo}[topo]overlay=0:0:shortest=1:format=auto:enable='{quando}'[v2]")
+        rotulo = "[v2]"
+        log(f"   gancho/CTA: {len(ev_topo)} imagens")
+    if barra:
+        from ..base import fps_saida
+        bh = max(6, int(H * 0.006))
+        F = fps_saida(info["fps"])
+        filtros.append(f"{rotulo}drawbox=x=0:y=0:w=iw:h={bh}:color=black@0.35:t=fill[vb];"
+                       f"color=c=0x{camada.destaque.lstrip('#')}:s={W}x{bh}:r={F}[bar];"
+                       f"[vb][bar]overlay=x='-w+w*t/{dur:.3f}':y=0:shortest=1[v3]")
+        rotulo = "[v3]"
+    filtros.append(f"{rotulo}format=yuv420p[v]")
+    audio = ["-map", "0:a?", "-c:a", "copy"]
+    pontos = []
+    if sons != "nao":
+        if gancho:
+            pontos.append((0.0, "impacto"))
+        if cta:
+            pontos.append((cta_ini, "pop"))
+        reg = saida_registrada(video) or {}
+        planos = []
+        if reg.get("mapa") and Path(reg["mapa"]).exists():
+            geo = ler_json(reg["mapa"]).get("quadro") or {}
+            planos = geo.get("planos", [])
+        for t in viradas(planos, sons):
+            if (not gancho or t > (gancho_ate or 0) + 0.5) and (cta_ini is None or abs(t - cta_ini) > 1):
+                pontos.append((t, "whoosh"))
+        if pontos:
+            arq_sons = faixa_de_sons(dur, pontos, pasta / "sons.wav")
+            entradas += ["-i", arq_sons]
+            idx = 1 + (0 if sem_legenda else 1) + (1 if (gancho or cta) else 0)
+            filtros.append(f"[0:a][{idx}:a]amix=inputs=2:normalize=0:duration=first[a]")
+            audio = ["-map", "[a]", "-c:a", "aac", "-b:a", "192k"]
+            log(f"   sons: {', '.join(f'{nm} em {t:.1f} s' for t, nm in sorted(pontos))}")
     c.fim()
-    log(f"   {n} imagens")
 
     perfil = carregar_perfil()
     if saida is None:
         nome = video.stem.replace(" (editado)", "")
-        saida = video.with_name(f"{nome} (legendado).mp4")
+        saida = video.with_name(f"{nome} ({'final' if sem_legenda else 'legendado'}).mp4")
     saida = saida_livre(Path(saida))
-    c = Cronometro("gravação com legenda")
-    rodar([ffmpeg(), "-y", "-v", "error", "-i", video, "-f", "concat", "-safe", "0", "-i", lista,
-           "-filter_complex", f"[1:v]format=rgba[c];[0:v][c]overlay=x=0:y={des.y_faixa}:shortest=1:format=auto,format=yuv420p[v]",
-           "-map", "[v]", "-map", "0:a?", *args_video(perfil), "-c:a", "copy", "-movflags", "+faststart", saida],
+    grafo = pasta / "filtros.txt"
+    grafo.write_text(";".join(filtros), encoding="utf-8")
+    c = Cronometro("gravação")
+    rodar([ffmpeg(), "-y", "-v", "error", "-i", video, *entradas, "-/filter_complex", grafo,
+           "-map", "[v]", *audio, *args_video(perfil), "-movflags", "+faststart", saida],
           descricao="gravar vídeo com legenda")
     c.fim()
     arq_blocos = job / f"legenda_{nome_seguro(Path(saida).stem)}.json"
-    salvar_json(arq_blocos, {"estilo": est, "blocos": tl, "saida": str(saida)})
+    salvar_json(arq_blocos, {"estilo": None if sem_legenda else est, "blocos": [] if sem_legenda else tl, "saida": str(saida),
+                             "gancho": gancho, "gancho_ate": gancho_ate, "cta": cta, "cta_em": cta_ini, "barra": barra,
+                             "sons": sorted(pontos)})
     reg = saida_registrada(video) or {}
-    registrar_saida(job, {"arquivo": str(Path(saida).resolve()), "etapa": "legendar", "estilo": est["id"],
+    registrar_saida(job, {"arquivo": str(Path(saida).resolve()), "etapa": "legendar", "estilo": None if sem_legenda else est["id"],
                           "palavras": origem if Path(origem).exists() else None, "mapa": reg.get("mapa"),
                           "origem": str(video), "blocos": str(arq_blocos)})
-    shutil.rmtree(pasta, ignore_errors=True)
+    if not os.environ.get("CORTA_MANTER"):          # CORTA_MANTER=1 guarda as imagens para diagnóstico
+        shutil.rmtree(pasta, ignore_errors=True)
     log(f"   → {saida}")
     return saida
 

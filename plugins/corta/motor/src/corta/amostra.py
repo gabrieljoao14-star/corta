@@ -54,8 +54,9 @@ def amostra() -> bool:
             falhas.append("não achei o recomeço 'Hoje eu vou te mostrar…'")
         log("4/7 montagem")
         editado = montar(video, takes=job / "takes.json")
-        log("5/7 legenda")
-        legendado = legendar(editado, estilo="creator-bold")
+        log("5/7 legenda, gancho, CTA, barra e sons")
+        legendado = legendar(editado, estilo="creator-bold", gancho="Edite sem perder tempo | Veja como",
+                             cta="Siga para mais", barra=True, sons="poucos")
         log("6/7 formato 4:5 com zoom (sem rosto na amostra: enquadra no centro)")
         zoom = montar(video, takes=job / "takes.json", formato="4:5", enquadrar="rosto", zoom="normal",
                       saida=video.with_name("amostra (zoom 4x5).mp4"))
