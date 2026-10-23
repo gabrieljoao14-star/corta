@@ -1,6 +1,6 @@
 [project]
 name = "corta"
-version = "0.4.0"
+version = "0.5.0"
 description = "Motor de edição de vídeo do /corta: silêncio, takes, legenda e verificação. Roda no Mac e no Windows."
 readme = "README.md"
 requires-python = ">=3.11,<3.13"

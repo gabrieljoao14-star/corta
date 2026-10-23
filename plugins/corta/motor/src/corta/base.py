@@ -175,3 +175,17 @@ def saida_registrada(arquivo: Path) -> dict | None:
         return ler_json(glob_).get(str(Path(arquivo).resolve()))
     except ValueError:
         return None
+
+
+def manter_acordado() -> None:
+    """Edição longa não pode parar porque o computador dormiu (lição das notas: Mac dormindo trava o job)."""
+    try:
+        if sys.platform == "darwin" and shutil.which("caffeinate"):
+            subprocess.Popen(["caffeinate", "-dimsu", "-w", str(os.getpid())],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif os.name == "nt":
+            import ctypes
+            # ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_AWAYMODE_REQUIRED: vale enquanto este processo existir
+            ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001 | 0x00000040)
+    except Exception:
+        pass

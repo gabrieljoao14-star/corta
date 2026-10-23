@@ -1,6 +1,6 @@
 name: motor
-# Edita o vídeo de amostra do começo ao fim no Mac e no Windows a cada mudança.
-# Se quebrar em um dos dois, a versão não sai.
+# A cada mudança: testes do motor + o vídeo de amostra editado do começo ao fim, e os instaladores
+# de verdade (Mac: instalar.sh; Windows: instalar.ps1) numa pasta de usuário vazia.
 on:
   push:
   pull_request:
@@ -30,3 +30,36 @@ jobs:
       - run: uv run corta perfil --recalcular
       - run: uv run --group dev pytest -q
       - run: uv run corta amostra
+      - run: uv run corta diagnostico
+
+  instalador:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      CORTA_MODELO: small
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalador do Mac (sem ffmpeg nem uv no sistema)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew uninstall --ignore-dependencies ffmpeg 2>/dev/null || true
+          export CORTA_HOME="$RUNNER_TEMP/home-corta"
+          bash plugins/corta/instalar.sh
+          "plugins/corta/bin/corta" diagnostico
+      - name: Instalador do Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:CORTA_HOME = Join-Path $env:RUNNER_TEMP "home-corta"
+          powershell -NoProfile -ExecutionPolicy Bypass -File plugins/corta/instalar.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Lançador pelo Git Bash (como o Claude Code usa no Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          export CORTA_HOME="$RUNNER_TEMP/home-corta"
+          plugins/corta/bin/corta diagnostico

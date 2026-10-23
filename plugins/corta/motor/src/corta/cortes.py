@@ -14,8 +14,9 @@ Critério de um bom corte (nota 03, validado em 11 shorts da Aula 1):
 - limites pela transcrição (início da 1ª palavra, fim da última), nunca "de olho".
 
 cortes.json:
-  {"cortes": [{"nome": "Prazo que ninguém conta", "inicio": "12:03.4", "fim": "12:58.0"}, …]}
-(tempos em segundos ou "mm:ss.s"; os tempos são do vídeo original)
+  {"cortes": [{"nome": "Prazo que ninguém conta", "inicio": "12:03.4", "fim": "12:58.0",
+               "gancho": "O prazo que ninguém conta | e que derruba o processo"}, …]}
+(tempos em segundos ou "mm:ss.s", do vídeo original; "gancho" e "cta" por corte são opcionais)
 """
 from __future__ import annotations
 
@@ -70,7 +71,7 @@ def texto(video: Path) -> list[dict]:
 
 def cortar(video: Path, arquivo_cortes: Path, formato: str = "9:16", enquadrar: str = "rosto", zoom: str = "nao",
            legenda: str | None = None, ajustes: dict | None = None, takes: Path | None = None,
-           regioes: Path | None = None) -> list[Path]:
+           regioes: Path | None = None, cta: str | None = None, barra: bool = False, sons: str = "nao") -> list[Path]:
     from .legenda.queimar import legendar
     from .montar import montar
     video = video.resolve()
@@ -89,8 +90,10 @@ def cortar(video: Path, arquivo_cortes: Path, formato: str = "9:16", enquadrar: 
         log(f"\n######## corte {n}/{len(lista)}: {nome} [{_mmss(ini)}–{_mmss(fim)}]")
         saida = montar(video, takes=takes, apertar=True, saida=pasta / f"{nome}.mp4", formato=formato,
                        enquadrar=enquadrar, zoom=zoom, janela=(ini, fim), regioes=regioes)
-        if legenda:
-            final = legendar(saida, estilo=legenda, ajustes=ajustes or {}, saida=pasta / f"{nome} (legendado).mp4")
+        gancho = c.get("gancho")
+        if legenda or gancho or cta or barra or sons != "nao":
+            final = legendar(saida, estilo=legenda or "nenhuma", ajustes=ajustes or {}, saida=pasta / f"{nome} (final).mp4",
+                             gancho=gancho, cta=c.get("cta", cta), barra=barra, sons=sons)
             feitos.append(final)
         else:
             feitos.append(saida)

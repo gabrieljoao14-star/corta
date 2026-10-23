@@ -49,7 +49,7 @@ pequena não estica mais que 3,6×; a sobra vai para a faixa). Zoom fica desliga
 Se a detecção errar: `--regioes minhas.json` com `{"tela": [x, y, larg, alt], "camera": [x, y, larg, alt]}`
 em pixels do vídeo original.
 Bom corte: gancho nos 3 primeiros segundos, se sustenta sozinho, fecha a ideia, 25–90 s.
-Os cortes saem em `LIVE - cortes/01 - nome (legendado).mp4`, já sem pausas e no rosto.
+Os cortes saem em `LIVE - cortes/01 - nome (final).mp4`, já sem pausas, no rosto e legendados. Gancho por corte: campo `"gancho"` no cortes.json; `--cta`, `--barra` e `--sons` valem para todos.
 Só legendar um vídeo pronto: `corta legendar VIDEO --estilo …` (transcreve sozinho).
 
 ### `takes.json`

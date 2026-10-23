@@ -1,0 +1,8 @@
+# Scripts precisam da quebra de linha certa em qualquer sistema (o git do Windows converte por padrão).
+*.sh text eol=lf
+plugins/corta/bin/corta text eol=lf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.mp4 binary
+*.ttf binary
+*.onnx binary

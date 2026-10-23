@@ -1,0 +1,13 @@
+{
+  "name": "corta",
+  "description": "Edita vídeos falados a partir de uma receita do app /corta: tira silêncio e erros de fala, legenda em estilos do CapCut, zoom no rosto, cortes de vídeo longo, gancho, CTA e sons, e confere o resultado. Mac e Windows.",
+  "version": "0.5.0",
+  "author": {
+    "name": "gabrieljoao14-star",
+    "url": "https://github.com/gabrieljoao14-star"
+  },
+  "homepage": "https://github.com/gabrieljoao14-star/corta",
+  "repository": "https://github.com/gabrieljoao14-star/corta",
+  "keywords": ["video", "edição", "legenda", "reels", "cortes", "silêncio", "capcut"],
+  "skills": "./skills/"
+}

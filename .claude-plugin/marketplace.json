@@ -1,0 +1,16 @@
+{
+  "name": "corta",
+  "owner": {
+    "name": "gabrieljoao14-star",
+    "url": "https://github.com/gabrieljoao14-star"
+  },
+  "description": "Receitas de edição de vídeo para o Claude Code: silêncio, erros de fala, legenda, zoom, cortes e acabamento. Mac e Windows.",
+  "plugins": [
+    {
+      "name": "corta",
+      "source": "./plugins/corta",
+      "description": "Edita vídeos falados a partir de uma receita: tira silêncio e erros de fala, legenda em estilos do CapCut, zoom no rosto, cortes de vídeo longo, gancho, CTA e sons. Confere o resultado sozinho.",
+      "homepage": "https://github.com/gabrieljoao14-star/corta"
+    }
+  ]
+}

@@ -16,6 +16,7 @@
   corta estilos
   corta verificar SAIDA
   corta amostra
+  corta diagnostico
 """
 from __future__ import annotations
 
@@ -108,6 +109,9 @@ def main(argv=None):
     p.add_argument("--legenda", default=None, metavar="ESTILO")
     p.add_argument("--ajuste", action="append", metavar="CHAVE=VALOR")
     p.add_argument("--takes", type=Path)
+    p.add_argument("--cta", default=None)
+    p.add_argument("--barra", action="store_true")
+    p.add_argument("--sons", default="nao", choices=["nao", "poucos", "todos"])
 
     p = sub.add_parser("regioes", help="acha a tela e a câmera numa gravação de aula/tutorial")
     p.add_argument("video", type=Path)
@@ -120,8 +124,12 @@ def main(argv=None):
     p.add_argument("saida", type=Path)
 
     sub.add_parser("amostra", help="edita o vídeo de amostra e confere (teste da instalação)")
+    sub.add_parser("diagnostico", help="confere se o computador está pronto e diz o que consertar")
 
     a = ap.parse_args(argv)
+    if a.cmd not in ("perfil", "estilos", "diagnostico", "texto", "corrigir"):
+        from .base import manter_acordado
+        manter_acordado()
     try:
         if a.cmd == "perfil":
             from .perfil import carregar, mostrar
@@ -156,7 +164,7 @@ def main(argv=None):
         elif a.cmd == "cortar":
             from .cortes import cortar
             cortar(a.video, a.cortes, formato=a.formato, enquadrar=a.enquadrar, zoom=a.zoom, legenda=a.legenda,
-                   ajustes=_ajustes(a.ajuste), takes=a.takes, regioes=a.regioes)
+                   ajustes=_ajustes(a.ajuste), takes=a.takes, regioes=a.regioes, cta=a.cta, barra=a.barra, sons=a.sons)
         elif a.cmd == "regioes":
             from .regioes import detectar
             detectar(a.video, a.de, a.ate)
@@ -167,6 +175,9 @@ def main(argv=None):
             from .verificar import verificar
             ok = verificar(a.saida)
             sys.exit(0 if ok else 2)
+        elif a.cmd == "diagnostico":
+            from .diagnostico import diagnostico
+            sys.exit(0 if diagnostico() else 2)
         elif a.cmd == "amostra":
             from .amostra import amostra
             sys.exit(0 if amostra() else 2)

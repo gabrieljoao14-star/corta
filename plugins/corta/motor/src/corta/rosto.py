@@ -19,13 +19,25 @@ LARGURA = 640
 
 
 def _medir(video, ini: float, fim: float, info: dict) -> list[list[float]]:
-    import cv2
+    """Roda o detector num processo separado: o OpenCV e o Whisper trazem cópias diferentes das
+    bibliotecas do ffmpeg e, no Mac, carregar os dois no mesmo processo pode travar."""
+    import json
+    import sys
     if not MODELO.exists():
         raise CortaErro("Modelo de rosto não encontrado no plugin. Reinstale o /corta.")
+    r = subprocess.run([sys.executable, "-m", "corta.rosto", str(video), f"{ini:.3f}", f"{fim:.3f}",
+                        str(info["largura"]), str(info["altura"])], capture_output=True, text=True, encoding="utf-8")
+    if r.returncode != 0:
+        raise CortaErro("O detector de rosto falhou.\n" + r.stderr[-1500:])
+    return json.loads(r.stdout)
+
+
+def _medir_aqui(video: str, ini: float, fim: float, largura: int, altura: int) -> list[list[float]]:
+    import cv2
     w = LARGURA
-    h = int(round(info["altura"] * w / info["largura"] / 2) * 2)
+    h = int(round(altura * w / largura / 2) * 2)
     det = cv2.FaceDetectorYN.create(str(MODELO), "", (w, h), 0.6, 0.3, 5000)
-    proc = subprocess.Popen([ffmpeg(), "-v", "error", "-hwaccel", "auto", "-ss", f"{ini:.3f}", "-t", f"{fim - ini:.3f}", "-i", str(video),
+    proc = subprocess.Popen([ffmpeg(), "-v", "error", "-hwaccel", "auto", "-ss", f"{ini:.3f}", "-t", f"{fim - ini:.3f}", "-i", video,
                              "-vf", f"fps={1 / PASSO},scale={w}:{h}", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"],
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     tam, k, out = w * h * 3, 0, []
@@ -74,3 +86,10 @@ def posicao(lista: list[list], a: float, b: float, padrao=(0.5, 0.4)) -> tuple[f
         meio = (a + b) / 2
         dentro = [min(com, key=lambda x: abs(x[0] - meio))]
     return float(np.median([x[1] for x in dentro])), float(np.median([x[2] for x in dentro])), True
+
+
+if __name__ == "__main__":
+    import json
+    import sys
+    v, a, b, lw, lh = sys.argv[1:6]
+    print(json.dumps(_medir_aqui(v, float(a), float(b), int(lw), int(lh))))
