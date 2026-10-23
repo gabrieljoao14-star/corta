@@ -3,12 +3,12 @@
 # Acha o uv e roda o motor que está ao lado deste arquivo, com as versões travadas do uv.lock.
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UV="$(command -v uv 2>/dev/null)"
-for c in "$HOME/.local/bin/uv" "$HOME/.local/bin/uv.exe" "$HOME/.cargo/bin/uv" "$USERPROFILE/.local/bin/uv.exe"; do
-  [ -z "$UV" ] && [ -x "$c" ] && UV="$c"
+for c in "${HOME}/.local/bin/uv" "${HOME}/.local/bin/uv.exe" "${HOME}/.cargo/bin/uv" "${USERPROFILE}/.local/bin/uv.exe"; do
+  [ -z "${UV}" ] && [ -x "${c}" ] && UV="${c}"
 done
-if [ -z "$UV" ]; then
+if [ -z "${UV}" ]; then
   echo "❌ O /corta ainda não foi instalado neste computador (falta o uv). Rode: /corta:instalar" >&2
   exit 1
 fi
 export PYTHONUTF8=1
-exec "$UV" run --quiet --frozen --project "$DIR/motor" corta "$@"
+exec "${UV}" run --quiet --frozen --project "${DIR}/motor" corta "$@"
